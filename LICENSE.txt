@@ -1,0 +1,14 @@
+
+Copyright (c) 2025 Christian Muneton
+
+Permission is hereby granted to any individual student, educator, or institution to use this software for **personal learning, instruction, or academic coursework only**.
+
+**Commercial use, redistribution, sublicensing, or inclusion in any paid or monetized product is strictly prohibited without express written permission** from the author.
+
+This software and its source code remain the intellectual property of Christian Muneton. All rights are reserved.
+
+Unauthorized reproduction, distribution, or modification of this software outside the bounds of this license is a violation of copyright law.
+
+For commercial licensing inquiries, contact: [cmuneton1201@outlook.com]
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
