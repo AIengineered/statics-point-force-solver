@@ -2,4 +2,4 @@ Pillow>=9.5.0
 streamlit==1.25.0
 streamlit_drawable_canvas==0.9.3
 sympy==1.13.3
-numpy==1.24.0
+numpy>=1.26.0
