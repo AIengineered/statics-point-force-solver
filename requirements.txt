@@ -1,5 +1,5 @@
 Pillow>=10.0.0
 streamlit
-streamlit_drawable_canvas
+streamlit-drawable-canvas>=0.11.0
 sympy==1.13.3
 numpy>=1.26.0
