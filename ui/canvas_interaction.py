@@ -15,7 +15,7 @@ from core.session_manager import increment_canvas_reset_key
 
 
 # Modified function signature to accept `bg_image_for_st_canvas` as the processed PIL Image
-def handle_force_drawing_input(W: int, H: int, origin: tuple, bg_image_for_st_canvas: Image.Image):
+def handle_force_drawing_input(W: int, H: int, origin: tuple, bg_image_for_st_canvas: Image.Image): # <--- MODIFIED LINE
     """
     Manages the main force drawing canvas for users to draw force vectors.
     Args:
@@ -28,15 +28,15 @@ def handle_force_drawing_input(W: int, H: int, origin: tuple, bg_image_for_st_ca
     if st.session_state.debug_mode: st.info(f"DEBUG: handle_force_drawing_input() - START. canvas_reset: {st.session_state.canvas_reset}, trigger_rerun: {st.session_state.trigger_rerun_after_logic}")
     st.subheader("1️⃣ Draw Force Vectors (from origin)")
 
-    # Use the passed bg_image_for_st_canvas, which is already a clean PIL Image
-    current_canvas_image_with_origin = draw_origin_dot(bg_image_for_st_canvas.copy(), origin)
+    current_canvas_image = bg_image_for_st_canvas.copy() # <--- MODIFIED LINE
+    current_canvas_image = draw_origin_dot(current_canvas_image, origin)
 
     # Display the main drawable canvas.
     res = st_canvas(
         fill_color="",                # No fill for lines
         stroke_width=4,               # Thickness of the drawn line
         stroke_color="orange",        # Color of the drawn line
-        background_image=current_canvas_image_with_origin, # <--- Pass the PIL Image directly
+        background_image=current_canvas_image, # This line remains as is, passing PIL Image
         # DO NOT provide 'background_color' if using 'background_image' for this component version (0.9.3)
         height=H, width=W,            # Dimensions of the canvas
         drawing_mode="line",          # Only allow drawing lines
@@ -78,7 +78,7 @@ def handle_force_drawing_input(W: int, H: int, origin: tuple, bg_image_for_st_ca
 
 
 # Modified function signature to accept `bg_image_for_st_canvas`
-def render_origin_pick_canvas(W: int, H: int, bg_image_for_st_canvas: Image.Image):
+def render_origin_pick_canvas(W: int, H: int, bg_image_for_st_canvas: Image.Image): # <--- MODIFIED LINE
     """
     Renders a temporary canvas for picking origin. Should be called in the main area, not sidebar.
     Args:
@@ -88,15 +88,15 @@ def render_origin_pick_canvas(W: int, H: int, bg_image_for_st_canvas: Image.Imag
     """
     st.subheader("Click on the canvas to select new origin:")
     
-    # Use the passed bg_image_for_st_canvas, which is already a clean PIL Image
-    temp_img_with_origin = draw_origin_dot(bg_image_for_st_canvas.copy(), st.session_state.origin)
+    temp_img = bg_image_for_st_canvas.copy() # <--- MODIFIED LINE
+    if st.session_state.origin:
+        temp_img = draw_origin_dot(temp_img, st.session_state.origin)
 
     result = st_canvas(
         fill_color="deepskyblue",
         stroke_width=16,
         stroke_color="deepskyblue",
-        background_image=temp_img_with_origin, # <--- Pass the PIL Image directly
-        # DO NOT provide 'background_color' if using 'background_image' for this component version (0.9.3)
+        background_image=temp_img, # This line remains as is, passing PIL Image
         update_streamlit=True,
         height=H,
         width=W,

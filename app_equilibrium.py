@@ -43,10 +43,13 @@ st.set_page_config(page_title=PAGE_TITLE_EQUILIBRIUM, layout="centered") # Sets 
 # ==============================================================================
 # Import session_manager functions.
 from core.session_manager import initialize_common_session_state, reset_all_app_state, increment_canvas_reset_key # Imports session state management functions
-initialize_common_session_state() # Initialize common Streamlit session state variables here
+initialize_common_session_state() # <--- THIS IS THE CRITICAL CALL TO INITIALIZE ALL SESSION STATE
+
 
 # Initialize a flag to control explicit reruns. This flag acts as a single point
 # to request a rerun from various parts of the application logic.
+# This check is actually redundant if initialize_common_session_state() is robust,
+# but it does no harm.
 if 'trigger_rerun_after_logic' not in st.session_state:
     st.session_state.trigger_rerun_after_logic = False
 
@@ -55,10 +58,9 @@ if 'trigger_rerun_after_logic' not in st.session_state:
 # 5. REMAINING IMPORTS AND APPLICATION LOGIC
 #    Now that set_page_config and session_state are done, we can import other modules
 # ==============================================================================
-# The 'from ui.canvas_interaction import ...' import should NOT contain 'render_origin_pick_canvas' here
-# as it's defined within the local scope below.
+# We will explicitly import render_origin_pick_canvas inside its conditional block below
+# to ensure consistent import paths if it were ever part of a different module.
 from ui.canvas_interaction import handle_force_drawing_input, handle_origin_selection_ui
-# NOTE: render_origin_pick_canvas will be imported directly within the conditional block that uses it
 from ui.force_properties_ui import render_force_properties_sidebar_content, render_drawing_scale_settings
 from solver.equilibrium_solver import solve_for_equilibrium
 from renderer.diagram_renderer import render_force_polygon_diagram, render_free_body_diagram
@@ -68,7 +70,7 @@ from solver.common import format_latex_sum_with_constants
 
 # --- DEBUG MESSAGES AT START OF SCRIPT RUN ---
 # These messages help trace the execution flow and session state values at the beginning of each rerun.
-if st.session_state.debug_mode:
+if st.session_state.debug_mode: # This line now depends on debug_mode being initialized by session_manager
     st.info(f"--- SCRIPT START (RERUN) ---")
     st.info(f"Current canvas_reset at script start: {st.session_state.canvas_reset}")
     st.info(f"Current last_uploaded_filename at script start: {st.session_state.last_uploaded_filename}")
@@ -157,9 +159,9 @@ else: # Default white canvas if no image uploaded
     bg_image_for_display_and_drawing = Image.new("RGB", (W, H), "white") # Always ensure a white PIL Image
 
 # Set default origin to center of canvas if not already defined.
-if st.session_state.origin is None:
+if 'origin' not in st.session_state or st.session_state.origin is None: # <--- CRITICAL FIX: Check if 'origin' is in session state
     st.session_state.origin = (W // 2, H // 2)
-origin = st.session_state.origin
+origin = st.session_state.origin # Use a local variable for clarity
 
 
 # ==============================================================================
@@ -225,10 +227,12 @@ if st.session_state.get("pick_origin_mode", False):
     # Origin pick mode: Show a canvas with a background image and let user click
     # Import render_origin_pick_canvas here as it's only used conditionally.
     from ui.canvas_interaction import render_origin_pick_canvas
+    # Pass the processed PIL Image to the canvas interaction functions
     render_origin_pick_canvas(W, H, bg_image_for_display_and_drawing) # Pass the processed PIL Image
 else:
     # Normal drawing mode: draw forces on the main canvas
     if st.session_state.debug_mode: st.info("DEBUG: Calling handle_force_drawing_input.")
+    # Pass the processed PIL Image to the canvas interaction functions
     handle_force_drawing_input(W, H, origin, bg_image_for_display_and_drawing) # Pass the processed PIL Image
     if st.session_state.debug_mode: st.info(f"DEBUG: Returned from handle_force_drawing_input. canvas_reset: {st.session_state.canvas_reset}")
 
@@ -249,7 +253,7 @@ else:
 #         vectors=st.session_state.vectors, # List of Vector objects
 #         origin=origin, # Origin point
 #         W=W, H=H, # Canvas dimensions
-#         bg_image=bg_image, # Background image
+#         bg_image=bg_image_for_display_and_drawing, # Background image
 #         is_equilibrium_app=True, # Flag indicating this is the Equilibrium app
 #         solution_context=None, # No solved context for dynamic display
 #         F_syms=None, theta_syms_rad=None, R_sym=None, alpha_sym_rad=None # No SymPy symbols needed here
@@ -344,10 +348,10 @@ else:
 
 #                 st.subheader(f"Force Polygon (Solution {idx})") # Subheader for force polygon
 #                 render_force_polygon_diagram(
-#                     vectors=st.session_state.vectors, # Pass original vectors for iteration
+#                     vectors=st.session_state.vectors, # List of Vector objects
 #                     origin=origin, # Origin point
 #                     W=W, H=H, # Canvas dimensions
-#                     bg_image=bg_image, # Background image
+#                     bg_image=bg_image_for_display_and_drawing, # Background image
 #                     is_equilibrium_app=True, # Flag indicating Equilibrium app
 #                     solution_context=sol, # Pass the specific solution to draw the polygon accurately
 #                     F_syms=F_syms, theta_syms_rad=theta_syms_rad, # SymPy symbols for drawing
@@ -368,7 +372,7 @@ render_free_body_diagram(
     vectors=st.session_state.vectors,
     origin=origin,
     W=W, H=H,
-    bg_image=bg_image,
+    bg_image=bg_image_for_display_and_drawing, # Background image
     is_equilibrium_app=True,
     solution_context=None, # This FBD shows current user inputs, no solved context yet
     F_syms=None, theta_syms_rad=None, R_sym=None, alpha_sym_rad=None
@@ -445,7 +449,7 @@ if st.session_state.last_solve_click: # If solve button was clicked
                     vectors=st.session_state.vectors, # Pass original vectors for iteration
                     origin=origin,
                     W=W, H=H,
-                    bg_image=bg_image,
+                    bg_image=bg_image_for_display_and_drawing, # Use the processed PIL Image
                     is_equilibrium_app=True,
                     solution_context=sol,
                     F_syms=F_syms, theta_syms_rad=theta_syms_rad,
@@ -457,7 +461,7 @@ if st.session_state.last_solve_click: # If solve button was clicked
                     vectors=st.session_state.vectors,
                     origin=origin,
                     W=W, H=H,
-                    bg_image=bg_image,
+                    bg_image=bg_image_for_display_and_drawing, # Use the processed PIL Image
                     is_equilibrium_app=True,
                     solution_context=sol,
                     F_syms=F_syms, theta_syms_rad=theta_syms_rad,
@@ -473,7 +477,7 @@ elif all(isinstance(v.magnitude, (float, int)) and isinstance(v.angle, (float, i
         vectors=st.session_state.vectors,
         origin=origin,
         W=W, H=H,
-        bg_image=bg_image,
+        bg_image=bg_image_for_display_and_drawing, # Use the processed PIL Image
         is_equilibrium_app=True,
         solution_context=None,
         F_syms=None, theta_syms_rad=None, R_sym=None, alpha_sym_rad=None
