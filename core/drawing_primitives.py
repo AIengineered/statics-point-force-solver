@@ -1,6 +1,7 @@
 # drawing_primitives.py
 from PIL import Image, ImageDraw
 import math
+from typing import Union
 
 def draw_origin_dot(img: Image.Image, origin: tuple, r: int = 10, color: str = "deepskyblue") -> Image.Image:
     """
@@ -56,7 +57,7 @@ def draw_arrow(d: ImageDraw.ImageDraw, start: tuple, end: tuple, fill: str = "or
     p3 = (end[0]-ah*math.cos(ang+math.pi/8), end[1]-ah*math.sin(ang+math.pi/8))
     d.polygon([p1,p2,p3], fill=fill)
 
-def get_object_id(obj: dict) -> tuple | None:
+def get_object_id(obj: dict) -> Union[tuple, None]:
     """
     Generates a unique ID for a drawable object from st_canvas's json_data.
     This helps in tracking newly drawn objects and preventing duplicate processing.
