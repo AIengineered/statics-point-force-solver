@@ -3,8 +3,6 @@ import streamlit as st
 from PIL import Image
 from io import BytesIO
 from streamlit_drawable_canvas import st_canvas
-import base64
-
 # Import custom modules
 from core.drawing_primitives import draw_origin_dot, get_object_id
 from core.geometry_utils import calculate_vector_properties_from_line, convert_polar_to_cartesian
@@ -33,17 +31,12 @@ def handle_force_drawing_input(W: int, H: int, origin: tuple, bg_image: Image.Im
     current_canvas_image = bg_image.copy()
     current_canvas_image = draw_origin_dot(current_canvas_image, origin)
 
-    buffered = BytesIO()
-    current_canvas_image.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    background_image_url = f"data:image/png;base64,{img_str}"
-
     # Display the main drawable canvas.
     res = st_canvas(
         fill_color="",                # No fill for lines
         stroke_width=4,               # Thickness of the drawn line
         stroke_color="orange",        # Color of the drawn line
-        background_image=background_image_url, # The image drawn with origin
+        background_image=current_canvas_image, # The image drawn with origin
         height=H, width=W,            # Dimensions of the canvas
         drawing_mode="line",          # Only allow drawing lines
         key=f"vector-canvas-{st.session_state.canvas_reset}" # Unique key to force canvas refresh
@@ -102,16 +95,11 @@ def render_origin_pick_canvas(W: int, H: int, bg_image):
     if st.session_state.origin:
         temp_img = draw_origin_dot(temp_img, st.session_state.origin)
 
-    buffered = BytesIO()
-    temp_img.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    background_image_url_temp = f"data:image/png;base64,{img_str}"
-
     result = st_canvas(
         fill_color="deepskyblue",
         stroke_width=16,
         stroke_color="deepskyblue",
-        background_image=background_image_url_temp,
+        background_image=temp_img,
         update_streamlit=True,
         height=H,
         width=W,
