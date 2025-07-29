@@ -5,6 +5,8 @@ import sympy as sp
 import math
 from PIL import Image # For image handling (e.g., background image)
 from io import BytesIO # For handling image data in bytes (e.g., BytesIO)
+# No need for 'import base64' here, as the direct PIL Image handling for st_canvas is preferred for 0.9.3
+
 
 # ==============================================================================
 # 1. ESSENTIAL IMPORTS & PATH SETUP (NO STREAMLIT COMMANDS YET!)
@@ -53,12 +55,15 @@ if 'trigger_rerun_after_logic' not in st.session_state:
 # 5. REMAINING IMPORTS AND APPLICATION LOGIC
 #    Now that set_page_config and session_state are done, we can import other modules
 # ==============================================================================
-from ui.canvas_interaction import handle_force_drawing_input, handle_origin_selection_ui, render_origin_pick_canvas # Imports canvas interaction functions
-from ui.force_properties_ui import render_force_properties_sidebar_content, render_drawing_scale_settings # Import both functions
-from solver.equilibrium_solver import solve_for_equilibrium # Imports the equilibrium solver function
-from renderer.diagram_renderer import render_force_polygon_diagram, render_free_body_diagram # Imports the diagram renderer
-from core.data_models import Vector # Imports the Vector dataclass
-from solver.common import format_latex_sum_with_constants # Imports helper for LaTeX formatting
+# The 'from ui.canvas_interaction import ...' import should NOT contain 'render_origin_pick_canvas' here
+# as it's defined within the local scope below.
+from ui.canvas_interaction import handle_force_drawing_input, handle_origin_selection_ui
+# NOTE: render_origin_pick_canvas will be imported directly within the conditional block that uses it
+from ui.force_properties_ui import render_force_properties_sidebar_content, render_drawing_scale_settings
+from solver.equilibrium_solver import solve_for_equilibrium
+from renderer.diagram_renderer import render_force_polygon_diagram, render_free_body_diagram
+from core.data_models import Vector
+from solver.common import format_latex_sum_with_constants
 
 
 # --- DEBUG MESSAGES AT START OF SCRIPT RUN ---
@@ -72,83 +77,93 @@ if st.session_state.debug_mode:
 
 
 # --- Main Application Title ---
-st.title(PAGE_TITLE_EQUILIBRIUM) # Main app title
+st.title(PAGE_TITLE_EQUILIBRIUM)
 
 
 # --- Upload Background Image (Optional) ---
 # This section handles file uploads for a background image on the canvas.
-# It checks if a new file is uploaded or if an existing one is cleared,
-# and triggers a state reset and rerun if necessary.
 uploaded_file = st.file_uploader("Upload background image (optional, e.g. structure or diagram)", type=["png", "jpg", "jpeg"])
 
-# Flag to determine if a reset/rerun is needed due to file upload/clear.
-# This helps consolidate the rerun request at the end of the script.
 needs_file_update_and_rerun = False
 
-# Condition 1: A file has been uploaded via the uploader.
-if uploaded_file is not None:
-    if st.session_state.debug_mode: st.info(f"DEBUG: File uploader has a file: {uploaded_file.name}.") # Debug: confirm file is seen by widget
+# This will hold the final PIL Image object for both canvas background and FBD/Polygon rendering.
+# It will always be a PIL Image (either processed uploaded image or a new white one).
+bg_image_for_display_and_drawing = None 
 
-    # Check if this is a genuinely NEW file (different filename) or if it's the SAME file
-    # being re-uploaded/persisted by Streamlit.
-    # CRITICAL FIX: Add explicit check for 'last_uploaded_filename' in session_state
+# If a file has been uploaded via the uploader.
+if uploaded_file is not None:
+    if st.session_state.debug_mode: st.info(f"DEBUG: File uploader has a file: {uploaded_file.name}.")
+
     if "last_uploaded_filename" not in st.session_state or st.session_state.last_uploaded_filename != uploaded_file.name:
         if st.session_state.debug_mode: st.info(f"DEBUG: New file detected (or re-selected): {uploaded_file.name}. Processing...")
         
         img0 = Image.open(BytesIO(uploaded_file.getvalue()))
+        
+        # --- START OF CRITICAL NEW CODE: Ensure RGB mode and handle alpha for compatibility ---
+        # This converts any image to RGB and composites transparent images onto a white background.
+        # This is VITAL for streamlit-drawable-canvas 0.9.3 to render images correctly.
+        if img0.mode in ('RGBA', 'LA') or (img0.mode == 'P' and 'transparency' in img0.info):
+            # Create a white background image the same size as img0
+            background = Image.new("RGB", img0.size, "white")
+            # Paste img0 onto the background. If RGBA, use the alpha channel as a mask.
+            background.paste(img0, mask=img0.split()[3] if img0.mode == 'RGBA' else None)
+            img0 = background
+        elif img0.mode != 'RGB':
+            # Convert other non-alpha modes (e.g., 'L' for grayscale, 'CMYK') to RGB
+            img0 = img0.convert("RGB")
+        # --- END OF CRITICAL NEW CODE ---
+
         w, h = img0.size
         if w > MAX_CANVAS_WIDTH: # Resize if image is too wide
-            img0 = img0.resize((MAX_CANVAS_WIDTH, int(h * MAX_CANVAS_WIDTH / w)), Image.LANCZOS) # Resize image
-        buf = BytesIO()
-        img0.save(buf, format="PNG")
+            img0 = img0.resize((MAX_CANVAS_WIDTH, int(h * MAX_CANVAS_WIDTH / w)), Image.LANCZOS)
         
-        st.session_state.bg_image_bytes = buf.getvalue() # Store image bytes
-        st.session_state.last_uploaded_filename = uploaded_file.name # Store filename
+        buf = BytesIO()
+        img0.save(buf, format="PNG") # Save as PNG after processing
+        
+        st.session_state.bg_image_bytes = buf.getvalue()
+        st.session_state.last_uploaded_filename = uploaded_file.name
         if st.session_state.debug_mode: st.info(f"DEBUG: app_equilibrium: Called reset_all_app_state() after new file upload.")
-        needs_file_update_and_rerun = True # Indicate that a rerun is needed
+        needs_file_update_and_rerun = True
     else:
         if st.session_state.debug_mode: st.info("DEBUG: File uploader has same file as last processed. No reprocessing initiated by this block.")
 
 # Condition 2: No file is currently in the uploader (uploaded_file is None).
-# This branch executes if the user has cleared the file or no file was ever selected.
-# CRITICAL FIX: Add explicit checks for 'bg_image_bytes' and 'last_uploaded_filename' in session_state
 elif ("bg_image_bytes" in st.session_state and st.session_state.bg_image_bytes is not None) or \
      ("last_uploaded_filename" in st.session_state and st.session_state.last_uploaded_filename is not None):
     
     if st.session_state.debug_mode: st.info("DEBUG: File uploader is empty. Clearing any previously loaded background image from session state.")
-    st.session_state.bg_image_bytes = None # Clear image bytes
-    st.session_state.last_uploaded_filename = None # Clear filename
+    st.session_state.bg_image_bytes = None
+    st.session_state.last_uploaded_filename = None
     
-    reset_all_app_state() # Reset other app-related state.
+    reset_all_app_state()
     if st.session_state.debug_mode: st.info(f"DEBUG: app_equilibrium: Called reset_all_app_state() after clearing file.")
-    needs_file_update_and_rerun = True # Indicate that a rerun is needed
+    needs_file_update_and_rerun = True
 else:
     if st.session_state.debug_mode: st.info("DEBUG: No file uploaded, and no previous file found in session state.")
 
-# If a rerun has been requested by the file handling logic, set the main trigger flag.
 if needs_file_update_and_rerun:
     st.session_state.trigger_rerun_after_logic = True
     if st.session_state.debug_mode: st.info(f"DEBUG: app_equilibrium: Setting trigger_rerun_after_logic to True due to file change.")
 
 
 # --- Canvas & Origin Setup ---
-# Determine canvas dimensions and background image based on upload status.
+# Determine canvas dimensions and the PIL Image to be used as background.
+# This 'bg_image_for_display_and_drawing' variable will always be a clean, RGB PIL Image.
 if st.session_state.bg_image_bytes:
-    bg_image = Image.open(BytesIO(st.session_state.bg_image_bytes)) # Load uploaded image
-    W, H = bg_image.size # Use image dimensions
+    bg_image_for_display_and_drawing = Image.open(BytesIO(st.session_state.bg_image_bytes))
+    W, H = bg_image_for_display_and_drawing.size
 else: # Default white canvas if no image uploaded
-    W, H = MAX_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT # Use default dimensions
-    bg_image = Image.new("RGB", (W, H), "white") # Create a white background image
+    W, H = MAX_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT
+    bg_image_for_display_and_drawing = Image.new("RGB", (W, H), "white") # Always ensure a white PIL Image
 
 # Set default origin to center of canvas if not already defined.
 if st.session_state.origin is None:
-    st.session_state.origin = (W // 2, H // 2) # Set origin to center of canvas
-origin = st.session_state.origin # Use a local variable for clarity
+    st.session_state.origin = (W // 2, H // 2)
+origin = st.session_state.origin
+
 
 # ==============================================================================
 # --- SIDEBAR CONTENT (ALL INPUTS & MAIN ACTIONS) ---
-# This section is organized to place global controls, then solve button,
-# then individual force properties, and finally reset options.
 # ==============================================================================
 with st.sidebar:
     
@@ -159,26 +174,18 @@ with st.sidebar:
 
     # --- Section 2: Force Inputs ---
     with st.expander("➕ Force Vectors", expanded=True):
-        # SIMPLIFIED TEXT HERE: Keep only the general angle convention
         st.write("Angles: 0° is rightward, +CCW.")
 
-        # Add the "Add Force" button as requested
         if st.button("➕ Add Force Manually"):
-            # Create a new, empty vector. Magnitude and angle will be None.
-            # drawn_length is 0.0 because it's not drawn.
             st.session_state.vectors.append(Vector(angle=None, magnitude=None, drawn_length=0.0))
-            # Trigger a rerun to display the new empty force inputs immediately
             st.session_state.trigger_rerun_after_logic = True
             if st.session_state.debug_mode: st.info("DEBUG: Added new empty vector.")
 
-        # This function will now handle the conditional instructions and force inputs
         render_force_properties_sidebar_content()
 
-        # --- NEW POSITION FOR DRAWING SCALE SETTINGS ---
-        st.markdown("---") # Separator between force inputs and scale settings
-        st.subheader("Drawing Scale Settings") # Subheader for this section
-        render_drawing_scale_settings() # Call the function here
-        # --- END NEW POSITION ---
+        st.markdown("---")
+        st.subheader("Drawing Scale Settings")
+        render_drawing_scale_settings()
 
     # --- Section 3: Solver ---
     with st.expander("🎯 Solve for Equilibrium", expanded=True):
@@ -208,8 +215,6 @@ with st.sidebar:
             st.session_state.trigger_rerun_after_logic = True
             if st.session_state.debug_mode: st.info("DEBUG: trigger_rerun_after_logic set True from clear.")
 
-    # The old "Drawing Scale Settings" expander from the end is now removed.
-
 st.sidebar.caption("All angles: 0° is right, +CCW. Blank for symbolic solve.")
 
 
@@ -218,12 +223,13 @@ st.sidebar.caption("All angles: 0° is right, +CCW. Blank for symbolic solve.")
 
 if st.session_state.get("pick_origin_mode", False):
     # Origin pick mode: Show a canvas with a background image and let user click
-    from ui.canvas_interaction import render_origin_pick_canvas # Ensure this import is correct
-    render_origin_pick_canvas(W, H, bg_image)
+    # Import render_origin_pick_canvas here as it's only used conditionally.
+    from ui.canvas_interaction import render_origin_pick_canvas
+    render_origin_pick_canvas(W, H, bg_image_for_display_and_drawing) # Pass the processed PIL Image
 else:
     # Normal drawing mode: draw forces on the main canvas
     if st.session_state.debug_mode: st.info("DEBUG: Calling handle_force_drawing_input.")
-    handle_force_drawing_input(W, H, origin, bg_image)
+    handle_force_drawing_input(W, H, origin, bg_image_for_display_and_drawing) # Pass the processed PIL Image
     if st.session_state.debug_mode: st.info(f"DEBUG: Returned from handle_force_drawing_input. canvas_reset: {st.session_state.canvas_reset}")
 
 
@@ -237,7 +243,7 @@ else:
 # all(isinstance(v.magnitude, (float, int)) and isinstance(v.angle, (float, int)) for v in st.session_state.vectors):
 #     st.subheader("3️⃣ Force Polygon & Equilibrium Check") # Section header
 #     if st.session_state.debug_mode: st.info("DEBUG: Displaying dynamic numeric force polygon for equilibrium check.")
-    
+
 #     # Call the renderer function for dynamic display
 #     render_force_polygon_diagram(
 #         vectors=st.session_state.vectors, # List of Vector objects
@@ -268,7 +274,7 @@ else:
 #         all_sols = solver_output['all_sols'] # List of solutions from solver
 #         F_syms = solver_output['F_syms'] # SymPy symbols for magnitudes
 #         theta_syms_rad = solver_output['theta_syms_rad'] # SymPy symbols for angles
-        
+
 #         # --- DETAILED LATEX OUTPUT BLOCK ---
 #         st.subheader("Symbolic Equations") # Subheader for equations section
 
@@ -434,21 +440,19 @@ if st.session_state.last_solve_click: # If solve button was clicked
                     else:
                         st.info(f"{var} = {val} (Symbolic or Complex)")
 
-                # --- NEW: Render FBD with solved values for each solution ---
-                st.subheader(f"Free Body Diagram (Solution {idx})") # Subheader for solved FBD
+                st.subheader(f"Free Body Diagram (Solution {idx})")
                 render_free_body_diagram(
                     vectors=st.session_state.vectors, # Pass original vectors for iteration
                     origin=origin,
                     W=W, H=H,
                     bg_image=bg_image,
                     is_equilibrium_app=True,
-                    solution_context=sol, # Pass the current solution to FBD
+                    solution_context=sol,
                     F_syms=F_syms, theta_syms_rad=theta_syms_rad,
                     R_sym=None, alpha_sym_rad=None
                 )
-                # --- END NEW FBD ---
 
-                st.subheader(f"Force Polygon (Solution {idx})") # Subheader for force polygon
+                st.subheader(f"Force Polygon (Solution {idx})")
                 render_force_polygon_diagram(
                     vectors=st.session_state.vectors,
                     origin=origin,
@@ -462,40 +466,28 @@ if st.session_state.last_solve_click: # If solve button was clicked
         else:
             st.info("No solutions found or no vectors defined with solvable unknowns.")
 elif all(isinstance(v.magnitude, (float, int)) and isinstance(v.angle, (float, int)) for v in st.session_state.vectors):
-    # This block now handles the scenario where all inputs are numeric AND solve button was NOT clicked.
-    # It still runs the equilibrium check and polygon, but it's now an 'elif' to the solve block.
     st.subheader("3️⃣ Force Polygon & Equilibrium Check (Numeric Inputs)")
     if st.session_state.debug_mode: st.info("DEBUG: Displaying dynamic numeric force polygon for equilibrium check.")
 
-    # Call the renderer function for dynamic display
     render_force_polygon_diagram(
         vectors=st.session_state.vectors,
         origin=origin,
         W=W, H=H,
         bg_image=bg_image,
         is_equilibrium_app=True,
-        solution_context=None, # No solved context for dynamic display
+        solution_context=None,
         F_syms=None, theta_syms_rad=None, R_sym=None, alpha_sym_rad=None
     )
 else:
     st.info("Draw forces or click 'Solve for Unknowns' to see results.")
 
 # --- Pick Origin Mode (TEMPORARY CANVAS) ---
-# This block activates when the user clicks "Pick Origin on Canvas".
-# It displays a special canvas for picking a single point.
-# This is placed at the end as it temporarily takes over the main content area.
-if st.session_state.pick_origin_mode: # If in origin picking mode
-    st.subheader("Click anywhere on the canvas to set the new origin") # User instruction
-    # The actual canvas and processing for picking the origin is now fully handled
-    # within the handle_origin_selection_ui function (called in the sidebar section).
-    # This 'pass' ensures no redundant canvas rendering occurs here.
+if st.session_state.get("pick_origin_mode", False):
+    st.subheader("Click anywhere on the canvas to set the new origin")
     pass
 
 
 # --- Final Rerun Logic ---
-# This is the single, centralized point where Streamlit reruns are triggered.
-# It checks the 'trigger_rerun_after_logic' flag which is set by various user interactions
-# (file upload/clear, drawing forces, changing force properties, picking origin, clearing all).
 if st.session_state.debug_mode: 
     st.info(f"--- SCRIPT END --- Checking trigger_rerun_after_logic: {st.session_state.trigger_rerun_after_logic}")
     st.info(f"--- SCRIPT END --- Current canvas_reset before final check: {st.session_state.canvas_reset}")
@@ -503,8 +495,6 @@ if st.session_state.debug_mode:
 if st.session_state.trigger_rerun_after_logic:
     if st.session_state.debug_mode: st.info("DEBUG: Triggering st.experimental_rerun()!")
 
-    # Atomically update state variables relevant to the rerun.
-    # This sets the rerun flag to False and increments canvas_reset for the next rendering.
     st.session_state.update({
         "trigger_rerun_after_logic": False,
         "canvas_reset": st.session_state.canvas_reset + 1

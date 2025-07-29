@@ -1,7 +1,7 @@
 # app_config.py
 
 # --- Debugging ---
-DEBUG_MODE = True # Set to True to enable debug messages (st.info)
+DEBUG_MODE = False # Set to True to enable debug messages (st.info)
 
 # --- Application Titles ---
 # Titles for the two separate Streamlit applications.
