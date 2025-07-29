@@ -10,7 +10,7 @@ def initialize_common_session_state():
     """
     # --- Initialize debug_mode FIRST within initialize_common_session_state ---
     if "debug_mode" not in st.session_state:
-        st.session_state.debug_mode = True # Default to False for production
+        st.session_state.debug_mode = False # Default to False for production
     # --- End of debug_mode initialization ---
 
     if st.session_state.debug_mode: st.info("DEBUG: initialize_common_session_state() - START") # Debug message
