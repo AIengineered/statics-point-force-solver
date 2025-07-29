@@ -48,10 +48,9 @@ initialize_common_session_state() # <--- THIS IS THE CRITICAL CALL TO INITIALIZE
 
 # Initialize a flag to control explicit reruns. This flag acts as a single point
 # to request a rerun from various parts of the application logic.
-# This check is actually redundant if initialize_common_session_state() is robust,
-# but it does no harm.
-if 'trigger_rerun_after_logic' not in st.session_state:
-    st.session_state.trigger_rerun_after_logic = False
+# REMOVED: Redundant 'if' check, as initialize_common_session_state now handles it.
+# if 'trigger_rerun_after_logic' not in st.session_state:
+#     st.session_state.trigger_rerun_after_logic = False
 
 
 # ==============================================================================
@@ -64,8 +63,8 @@ from ui.canvas_interaction import handle_force_drawing_input, handle_origin_sele
 from ui.force_properties_ui import render_force_properties_sidebar_content, render_drawing_scale_settings
 from solver.equilibrium_solver import solve_for_equilibrium
 from renderer.diagram_renderer import render_force_polygon_diagram, render_free_body_diagram
-from core.data_models import Vector
-from solver.common import format_latex_sum_with_constants
+from core.data_models import Vector #
+from solver.common import format_latex_sum_with_constants #
 
 
 # --- DEBUG MESSAGES AT START OF SCRIPT RUN ---
@@ -96,7 +95,8 @@ bg_image_for_display_and_drawing = None
 if uploaded_file is not None:
     if st.session_state.debug_mode: st.info(f"DEBUG: File uploader has a file: {uploaded_file.name}.")
 
-    if "last_uploaded_filename" not in st.session_state or st.session_state.last_uploaded_filename != uploaded_file.name:
+    # Removed: 'if "last_uploaded_filename" not in st.session_state' as session_manager initializes it.
+    if st.session_state.last_uploaded_filename != uploaded_file.name:
         if st.session_state.debug_mode: st.info(f"DEBUG: New file detected (or re-selected): {uploaded_file.name}. Processing...")
         
         img0 = Image.open(BytesIO(uploaded_file.getvalue()))
@@ -130,14 +130,14 @@ if uploaded_file is not None:
         if st.session_state.debug_mode: st.info("DEBUG: File uploader has same file as last processed. No reprocessing initiated by this block.")
 
 # Condition 2: No file is currently in the uploader (uploaded_file is None).
-elif ("bg_image_bytes" in st.session_state and st.session_state.bg_image_bytes is not None) or \
-     ("last_uploaded_filename" in st.session_state and st.session_state.last_uploaded_filename is not None):
+# Removed: Redundant 'if' check for 'bg_image_bytes' and 'last_uploaded_filename'
+elif st.session_state.bg_image_bytes is not None or st.session_state.last_uploaded_filename is not None:
     
     if st.session_state.debug_mode: st.info("DEBUG: File uploader is empty. Clearing any previously loaded background image from session state.")
     st.session_state.bg_image_bytes = None
     st.session_state.last_uploaded_filename = None
     
-    reset_all_app_state()
+    reset_all_app_state() #
     if st.session_state.debug_mode: st.info(f"DEBUG: app_equilibrium: Called reset_all_app_state() after clearing file.")
     needs_file_update_and_rerun = True
 else:
@@ -159,8 +159,10 @@ else: # Default white canvas if no image uploaded
     bg_image_for_display_and_drawing = Image.new("RGB", (W, H), "white") # Always ensure a white PIL Image
 
 # Set default origin to center of canvas if not already defined.
-if 'origin' not in st.session_state or st.session_state.origin is None: # <--- CRITICAL FIX: Check if 'origin' is in session state
+# This ensures 'origin' is always a valid tuple before being used.
+if st.session_state.origin is None:
     st.session_state.origin = (W // 2, H // 2)
+
 origin = st.session_state.origin # Use a local variable for clarity
 
 
@@ -179,6 +181,9 @@ with st.sidebar:
         st.write("Angles: 0° is rightward, +CCW.")
 
         if st.button("➕ Add Force Manually"):
+            # Ensure 'vectors' is in session_state before appending
+            if 'vectors' not in st.session_state:
+                st.session_state.vectors = []
             st.session_state.vectors.append(Vector(angle=None, magnitude=None, drawn_length=0.0))
             st.session_state.trigger_rerun_after_logic = True
             if st.session_state.debug_mode: st.info("DEBUG: Added new empty vector.")
@@ -203,9 +208,15 @@ with st.sidebar:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("↩️ Undo"):
+                # Ensure 'undo_requested' is initialized
+                if 'undo_requested' not in st.session_state:
+                    st.session_state.undo_requested = True # Will be initialized by session_manager
                 st.session_state.undo_requested = True
         with col2:
             if st.button("↪️ Redo"):
+                # Ensure 'redo_requested' is initialized
+                if 'redo_requested' not in st.session_state:
+                    st.session_state.redo_requested = True # Will be initialized by session_manager
                 st.session_state.redo_requested = True
         st.caption("Reverses the last canvas or input change.")
 
@@ -228,12 +239,12 @@ if st.session_state.get("pick_origin_mode", False):
     # Import render_origin_pick_canvas here as it's only used conditionally.
     from ui.canvas_interaction import render_origin_pick_canvas
     # Pass the processed PIL Image to the canvas interaction functions
-    render_origin_pick_canvas(W, H, bg_image_for_display_and_drawing) # Pass the processed PIL Image
+    render_origin_pick_canvas(W, H, bg_image_for_display_and_drawing)
 else:
     # Normal drawing mode: draw forces on the main canvas
     if st.session_state.debug_mode: st.info("DEBUG: Calling handle_force_drawing_input.")
     # Pass the processed PIL Image to the canvas interaction functions
-    handle_force_drawing_input(W, H, origin, bg_image_for_display_and_drawing) # Pass the processed PIL Image
+    handle_force_drawing_input(W, H, origin, bg_image_for_display_and_drawing)
     if st.session_state.debug_mode: st.info(f"DEBUG: Returned from handle_force_drawing_input. canvas_reset: {st.session_state.canvas_reset}")
 
 
@@ -413,8 +424,8 @@ if st.session_state.last_solve_click: # If solve button was clicked
         st.latex(f"R_x = 0")
         st.latex(f"R_y = 0")
 
-        lhs_eq1_final_latex = format_latex_sum_with_constants(constant_fx_sum, symbolic_fx_latex_terms)
-        lhs_eq2_final_latex = format_latex_sum_with_constants(constant_fy_sum, symbolic_fy_latex_terms)
+        lhs_eq1_final_latex = format_latex_sum_with_constants(constant_fx_sum, symbolic_fx_latex_terms) #
+        lhs_eq2_final_latex = format_latex_sum_with_constants(constant_fy_sum, symbolic_fy_latex_terms) #
 
         st.latex(f"\\therefore \\quad {lhs_eq1_final_latex} = 0")
         st.latex(f"\\therefore \\quad {lhs_eq2_final_latex} = 0")
@@ -492,12 +503,12 @@ if st.session_state.get("pick_origin_mode", False):
 
 
 # --- Final Rerun Logic ---
-if st.session_state.debug_mode: 
+if st.session_state.debug_mode:
     st.info(f"--- SCRIPT END --- Checking trigger_rerun_after_logic: {st.session_state.trigger_rerun_after_logic}")
     st.info(f"--- SCRIPT END --- Current canvas_reset before final check: {st.session_state.canvas_reset}")
 
 if st.session_state.trigger_rerun_after_logic:
-    if st.session_state.debug_mode: st.info("DEBUG: Triggering st.experimental_rerun()!")
+    if st.session_state.debug_mode: st.info(f"DEBUG: Triggering st.experimental_rerun()! (canvas_reset will increment to {st.session_state.canvas_reset + 1})")
 
     st.session_state.update({
         "trigger_rerun_after_logic": False,
